@@ -48,7 +48,6 @@
     "@babel/plugin-proposal-decorators": "^8.0.2",
     "@cloudflare/vite-plugin": "^1.46.0",
     "@cloudflare/vitest-pool-workers": "^0.8.71",
-    "@hono/zod-validator": "^0.9.1",
     "@rolldown/plugin-babel": "^0.2.3",
     "@tailwindcss/vite": "^4.3.1",
     "@types/node": "^26.0.1",

@@ -1226,16 +1226,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@hono/zod-validator@npm:^0.9.1":
-  version: 0.9.1
-  resolution: "@hono/zod-validator@npm:0.9.1"
-  peerDependencies:
-    hono: ">=4.11.2"
-    zod: ^3.25.0 || ^4.0.0
-  checksum: 10c0/34fb97baf400046a250d6cf746449d5e1d9cbcda0f31d3be08a5d0f121875cf3f951a73a809aa7875b3bbe82d4a945a730cb49edb44cb33fd990d49a513e8589
-  languageName: node
-  linkType: hard
-
 "@img/colour@npm:^1.1.0":
   version: 1.1.0
   resolution: "@img/colour@npm:1.1.0"
@@ -3658,7 +3648,6 @@ __metadata:
     "@cloudflare/kumo": "npm:^2.6.0"
     "@cloudflare/vite-plugin": "npm:^1.46.0"
     "@cloudflare/vitest-pool-workers": "npm:^0.8.71"
-    "@hono/zod-validator": "npm:^0.9.1"
     "@phosphor-icons/react": "npm:^2.1.10"
     "@rolldown/plugin-babel": "npm:^0.2.3"
     "@streamdown/code": "npm:^1.1.1"
