@@ -14,7 +14,7 @@
  */
 
 import type { User } from "../identity";
-import type { LlmClient } from "../llm";
+import type { LlmClient, SpecialistToolMap } from "../llm";
 import type { Tracer } from "../trace";
 import { runSpecialist, type SpecialistTask } from "../agents/specialists";
 import type { SpecialistResult } from "../agents/contract";
@@ -27,6 +27,7 @@ export interface RunTaskArgs {
   readonly llm: LlmClient;
   readonly modelId: string;
   readonly tracer: Tracer;
+  readonly mcpTools?: SpecialistToolMap;
 }
 
 /** The unit of work the executor delegates; defaults to {@link runSpecialist}. */
@@ -40,6 +41,8 @@ export interface ExecutorParams {
   readonly modelId: string;
   readonly tracer: Tracer;
   readonly runTask?: RunTask;
+  /** MCP tools discovered for this turn, forwarded to every specialist. */
+  readonly mcpTools?: SpecialistToolMap;
 }
 
 export interface ExecutorResult {
@@ -62,7 +65,8 @@ const defaultRunTask: RunTask = (a) =>
     task: a.task,
     llm: a.llm,
     modelId: a.modelId,
-    tracer: a.tracer
+    tracer: a.tracer,
+    mcpTools: a.mcpTools
   });
 
 export async function runExecutor(
@@ -132,7 +136,8 @@ export async function runExecutor(
             },
             llm: params.llm,
             modelId: params.modelId,
-            tracer: params.tracer
+            tracer: params.tracer,
+            mcpTools: params.mcpTools
           });
           results.set(id, result);
         } catch (err) {

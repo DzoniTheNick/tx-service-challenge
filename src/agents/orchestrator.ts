@@ -26,10 +26,15 @@ import {
 import { LIMITS, modelFor } from "../config";
 import { resolveUser, type User } from "../identity";
 import { TOOL_REGISTRY } from "../permissions/registry";
-import { createWorkersAiLlmClient } from "../llm";
-import { createTracer, type TraceEvent } from "../trace";
+import { createWorkersAiLlmClient, type SpecialistToolMap } from "../llm";
+import { createTracer, type TraceEvent, type Tracer } from "../trace";
 import { parsePlan, planSchema } from "../orchestration/plan";
 import { runExecutor } from "../orchestration/executor";
+import {
+  discoverMcpTools,
+  parseMcpContent,
+  type McpToolRef
+} from "../mcp/client";
 
 interface TraceRow {
   id: string;
@@ -80,6 +85,8 @@ export class ChatAgent extends AIChatAgent<Env> {
     const specialistModel = modelFor("specialist", this.env);
     const specialistLlm = createWorkersAiLlmClient(this.env);
     const workersai = createWorkersAI({ binding: this.env.AI });
+    // Discover MCP tools once per turn; failure degrades gracefully to none.
+    const mcpTools = await this.discoverMcp(tracer);
     let delegated = false;
 
     const result = streamText({
@@ -118,7 +125,8 @@ export class ChatAgent extends AIChatAgent<Env> {
               user,
               llm: specialistLlm,
               modelId: specialistModel,
-              tracer
+              tracer,
+              mcpTools
             });
             return {
               ok: true,
@@ -141,6 +149,70 @@ export class ChatAgent extends AIChatAgent<Env> {
     });
 
     return result.toUIMessageStreamResponse();
+  }
+
+  /**
+   * Connect to the Acme MCP server (if configured) and discover its tools for
+   * this turn. Connection and discovery are bounded and caught — a dead or
+   * misbehaving MCP server never blocks or crashes the turn (CONTEXT.md §5).
+   */
+  private async discoverMcp(tracer: Tracer): Promise<SpecialistToolMap> {
+    const url = this.env.MCP_URL;
+    if (!url) {
+      tracer.emit("orchestrator", "mcp_discovery", {
+        ok: false,
+        error: "MCP_URL not configured"
+      });
+      return {};
+    }
+    const { tools } = await discoverMcpTools({
+      tracer,
+      timeoutMs: LIMITS.MCP_TIMEOUT_MS,
+      listTools: async () => {
+        const serverId = await this.ensureMcpConnection(url);
+        return this.mcp
+          .listTools({ serverId })
+          .map((t) => ({ name: t.name, serverId: t.serverId }));
+      },
+      call: async (ref: McpToolRef, args) => {
+        const result = await this.mcp.callTool(
+          { serverId: ref.serverId, name: ref.name, arguments: args },
+          undefined,
+          { timeout: LIMITS.MCP_TIMEOUT_MS }
+        );
+        return parseMcpContent(result);
+      }
+    });
+    return tools;
+  }
+
+  /**
+   * Ensure a single connection to the MCP server, reusing an existing one across
+   * hibernation. Bounded by the MCP timeout so a hanging connect cannot wedge the
+   * DO. Returns the server id to address tool calls.
+   */
+  private async ensureMcpConnection(url: string): Promise<string> {
+    const existing = Object.entries(this.mcp.mcpConnections).find(
+      ([, conn]) => String((conn as { url?: URL }).url ?? "") === url
+    );
+    if (existing) return existing[0];
+    const connected = await new Promise<{ id: string }>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error("mcp_connect_timeout")),
+        LIMITS.MCP_TIMEOUT_MS
+      );
+      this.addMcpServer("acme", url).then(
+        (r) => {
+          clearTimeout(timer);
+          resolve(r);
+        },
+        (e) => {
+          clearTimeout(timer);
+          reject(e);
+        }
+      );
+    });
+    return connected.id;
   }
 
   /** Read the full trace for this session (RPC target for the /api route). */

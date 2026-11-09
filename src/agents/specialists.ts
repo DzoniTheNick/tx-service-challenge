@@ -48,6 +48,8 @@ export interface RunSpecialistParams {
   readonly timeoutMs?: number;
   /** Override native tool implementations (tests inject fakes). */
   readonly nativeTools?: Readonly<Record<string, SpecialistTool>>;
+  /** MCP tools discovered this turn (CONTEXT.md §5); permission-filtered here. */
+  readonly mcpTools?: SpecialistToolMap;
 }
 
 const SYSTEM_PROMPTS: Record<AgentId, string> = {
@@ -83,7 +85,12 @@ export async function runSpecialist(
 ): Promise<SpecialistResult> {
   const { agent, user, task, llm, modelId, tracer } = params;
   const timeoutMs = params.timeoutMs ?? LIMITS.SPECIALIST_TIMEOUT_MS;
-  const impls = params.nativeTools ?? NATIVE_TOOLS;
+  // Permitted tools are resolved from native implementations plus any MCP tools
+  // discovered this turn; permission filtering below is the only gate.
+  const impls: SpecialistToolMap = {
+    ...(params.nativeTools ?? NATIVE_TOOLS),
+    ...(params.mcpTools ?? {})
+  };
 
   tracer.emit(agent, "specialist_start", {
     taskId: task.taskId,
@@ -98,8 +105,8 @@ export async function runSpecialist(
     denied
   });
 
-  // 2. Expose only permitted tools that have an implementation this phase
-  //    (native now; load_skill and MCP tools arrive in later phases).
+  // 2. Expose only permitted tools that have an implementation available
+  //    (native + discovered MCP tools; load_skill arrives in Phase 5).
   const toolErrors: string[] = [];
   const exposed: SpecialistToolMap = {};
   for (const descriptor of allowed) {

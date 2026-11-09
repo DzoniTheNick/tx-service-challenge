@@ -5,6 +5,12 @@
   "compatibility_date": "2026-06-11",
   "compatibility_flags": ["nodejs_compat"],
   "ai": { "binding": "AI", "remote": true },
+  "vars": {
+    // URL of the Acme MCP server (separate Worker; `yarn workspace mcp-server dev`
+    // serves it on :8788). The orchestrator connects here and degrades gracefully
+    // if it is unreachable.
+    "MCP_URL": "http://localhost:8788/mcp"
+  },
   "assets": {
     "directory": "./public",
     "not_found_handling": "single-page-application",
