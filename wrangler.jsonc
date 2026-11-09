@@ -11,6 +11,10 @@
     // if it is unreachable.
     "MCP_URL": "http://localhost:8788/mcp"
   },
+  // Source of truth for skills (CONTEXT.md §6). Seed locally with `yarn seed`;
+  // the bundled SKILL.md import is the fallback if this is empty/unavailable.
+  // The id is a placeholder for local dev (MVP is local-only).
+  "kv_namespaces": [{ "binding": "SKILLS", "id": "skills_local_placeholder" }],
   "assets": {
     "directory": "./public",
     "not_found_handling": "single-page-application",

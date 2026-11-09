@@ -35,6 +35,8 @@ import {
   parseMcpContent,
   type McpToolRef
 } from "../mcp/client";
+import { loadSkills, type Skill } from "../skills/loader";
+import { BUNDLED_SKILLS } from "../skills/bundled";
 
 interface TraceRow {
   id: string;
@@ -87,6 +89,8 @@ export class ChatAgent extends AIChatAgent<Env> {
     const workersai = createWorkersAI({ binding: this.env.AI });
     // Discover MCP tools once per turn; failure degrades gracefully to none.
     const mcpTools = await this.discoverMcp(tracer);
+    // Resolve skills once per turn (KV source of truth, bundled fallback).
+    const skills = await this.loadTurnSkills();
     let delegated = false;
 
     const result = streamText({
@@ -126,7 +130,8 @@ export class ChatAgent extends AIChatAgent<Env> {
               llm: specialistLlm,
               modelId: specialistModel,
               tracer,
-              mcpTools
+              mcpTools,
+              skills
             });
             return {
               ok: true,
@@ -213,6 +218,11 @@ export class ChatAgent extends AIChatAgent<Env> {
       );
     });
     return connected.id;
+  }
+
+  /** Resolve this turn's skills: KV `SKILLS` if seeded, else the bundled set. */
+  private async loadTurnSkills(): Promise<Skill[]> {
+    return loadSkills(this.env, BUNDLED_SKILLS);
   }
 
   /** Read the full trace for this session (RPC target for the /api route). */

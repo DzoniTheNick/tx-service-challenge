@@ -16,6 +16,7 @@
  * (CONTEXT.md §14).
  */
 
+import { z } from "zod";
 import { LIMITS } from "../config";
 import type { User } from "../identity";
 import { allowedTools } from "../permissions/allowed";
@@ -23,6 +24,12 @@ import type { AgentId } from "../permissions/registry";
 import type { LlmClient, SpecialistTool, SpecialistToolMap } from "../llm";
 import type { Tracer } from "../trace";
 import { NATIVE_TOOLS } from "../tools/native";
+import {
+  loadSkillFor,
+  skillIndex,
+  skillsForAgent,
+  type Skill
+} from "../skills/loader";
 import {
   submitResultSchema,
   type SpecialistResult,
@@ -50,6 +57,8 @@ export interface RunSpecialistParams {
   readonly nativeTools?: Readonly<Record<string, SpecialistTool>>;
   /** MCP tools discovered this turn (CONTEXT.md §5); permission-filtered here. */
   readonly mcpTools?: SpecialistToolMap;
+  /** All skills for the turn (CONTEXT.md §6); scoped to this agent here. */
+  readonly skills?: readonly Skill[];
 }
 
 const SYSTEM_PROMPTS: Record<AgentId, string> = {
@@ -64,6 +73,18 @@ const SYSTEM_PROMPTS: Record<AgentId, string> = {
     "policy. Never invent policy. When you are finished, call submit_result with " +
     "an honest status, your answer, and any limitations."
 };
+
+/** System prompt for the agent, with the (scoped) skill index appended. */
+function buildSystemPrompt(agent: AgentId, skills: readonly Skill[]): string {
+  const index = skillIndex(agent, skills);
+  if (index.length === 0) return SYSTEM_PROMPTS[agent];
+  const lines = index.map((s) => `- ${s.name}: ${s.description}`).join("\n");
+  return (
+    `${SYSTEM_PROMPTS[agent]}\n\n` +
+    "Skills available to you (load the relevant one with load_skill BEFORE " +
+    `answering, then follow it):\n${lines}`
+  );
+}
 
 /** Build the user-facing prompt, folding in any upstream structured inputs. */
 function buildPrompt(task: SpecialistTask): string {
@@ -85,11 +106,25 @@ export async function runSpecialist(
 ): Promise<SpecialistResult> {
   const { agent, user, task, llm, modelId, tracer } = params;
   const timeoutMs = params.timeoutMs ?? LIMITS.SPECIALIST_TIMEOUT_MS;
-  // Permitted tools are resolved from native implementations plus any MCP tools
-  // discovered this turn; permission filtering below is the only gate.
+  const skills = params.skills ?? [];
+  const agentSkills = skillsForAgent(agent, skills);
+
+  // Permitted tools are resolved from native implementations, MCP tools
+  // discovered this turn, and load_skill (only when the agent has skills);
+  // permission filtering below is the only gate.
   const impls: SpecialistToolMap = {
     ...(params.nativeTools ?? NATIVE_TOOLS),
-    ...(params.mcpTools ?? {})
+    ...(params.mcpTools ?? {}),
+    ...(agentSkills.length > 0
+      ? {
+          load_skill: buildLoadSkillTool(
+            agent,
+            task.taskId,
+            agentSkills,
+            tracer
+          )
+        }
+      : {})
   };
 
   tracer.emit(agent, "specialist_start", {
@@ -149,7 +184,7 @@ export async function runSpecialist(
   try {
     await llm.complete({
       modelId,
-      system: SYSTEM_PROMPTS[agent],
+      system: buildSystemPrompt(agent, skills),
       prompt: buildPrompt(task),
       tools: exposed,
       maxSteps: LIMITS.SPECIALIST_MAX_STEPS,
@@ -215,6 +250,34 @@ function wrapWithTrace(
         });
         return { ok: false, error: message };
       }
+    }
+  };
+}
+
+/**
+ * The `load_skill` tool for one agent. Enforces skill scope (CONTEXT.md §6): it
+ * can only load a skill whose `agents` frontmatter includes this agent. A
+ * successful load emits a `skill_loaded` trace row and returns the body.
+ */
+function buildLoadSkillTool(
+  agent: AgentId,
+  taskId: string,
+  agentSkills: readonly Skill[],
+  tracer: Tracer
+): SpecialistTool {
+  const names = agentSkills.map((s) => s.name).join(", ");
+  return {
+    description: `Load the full body of a skill by name (available: ${names}). Load one before answering, then follow it.`,
+    inputSchema: z.object({
+      name: z.string().describe("The skill name to load")
+    }),
+    execute: (input) => {
+      const { name } = input as { name: string };
+      const result = loadSkillFor(agent, name, agentSkills);
+      if (result.ok) {
+        tracer.emit(agent, "skill_loaded", { taskId, name: result.name });
+      }
+      return result;
     }
   };
 }
