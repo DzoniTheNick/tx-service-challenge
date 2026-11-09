@@ -1,0 +1,16 @@
+# Local secrets/config for the app Worker (copy to .dev.vars; .dev.vars is gitignored).
+# The default setup is KEYLESS: Workers AI (@cf/zai-org/glm-4.7-flash) needs only
+# `wrangler login`, no values here. Everything below is OPTIONAL.
+
+# --- Per-role model overrides (CONTEXT.md §9) ---
+# Leave unset to use the keyless Workers AI default for both roles.
+# Documented fallback if glm is unreliable at tool calling: gpt-6-luna (OpenAI).
+# MODEL_ORCHESTRATOR=gpt-6-luna
+# MODEL_SPECIALIST=@cf/zai-org/glm-4.7-flash
+
+# --- API keys for the fallback providers (only if you set the models above) ---
+# OPENAI_API_KEY=sk-...
+# GOOGLE_GENERATIVE_AI_API_KEY=...
+
+# --- MCP server URL (defaults to the local dev MCP Worker) ---
+# MCP_URL=http://localhost:8788/mcp

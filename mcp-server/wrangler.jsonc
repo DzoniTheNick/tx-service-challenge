@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "acme-mcp-server",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    // MCP failure-mode switch: "ok" | "error" | "timeout". Restart to change.
+    "MCP_MODE": "ok"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "AcmeMcp",
+        "name": "MCP_OBJECT"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "new_sqlite_classes": ["AcmeMcp"],
+      "tag": "v1"
+    }
+  ]
+}
