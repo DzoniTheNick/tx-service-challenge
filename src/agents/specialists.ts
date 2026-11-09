@@ -21,7 +21,12 @@ import { LIMITS } from "../config";
 import type { User } from "../identity";
 import { allowedTools } from "../permissions/allowed";
 import type { AgentId } from "../permissions/registry";
-import type { LlmClient, SpecialistTool, SpecialistToolMap } from "../llm";
+import type {
+  LlmClient,
+  LlmResult,
+  SpecialistTool,
+  SpecialistToolMap
+} from "../llm";
 import type { Tracer } from "../trace";
 import { NATIVE_TOOLS } from "../tools/native";
 import {
@@ -51,8 +56,10 @@ export interface RunSpecialistParams {
   readonly llm: LlmClient;
   readonly modelId: string;
   readonly tracer: Tracer;
-  /** Override the 25 s default (tests use a few ms). */
+  /** Override the default per-task timeout (tests use a few ms). */
   readonly timeoutMs?: number;
+  /** Override total attempts (default LIMITS.SPECIALIST_MAX_ATTEMPTS). */
+  readonly maxAttempts?: number;
   /** Override native tool implementations (tests inject fakes). */
   readonly nativeTools?: Readonly<Record<string, SpecialistTool>>;
   /** MCP tools discovered this turn (CONTEXT.md §5); permission-filtered here. */
@@ -63,24 +70,37 @@ export interface RunSpecialistParams {
 
 const SYSTEM_PROMPTS: Record<AgentId, string> = {
   it:
-    "You are the IT support specialist for Acme d.o.o. Diagnose and resolve " +
+    "You are the IT support specialist for TX Service. Diagnose and resolve " +
     "first-level IT issues using ONLY the tools you have been given. Never claim " +
     "to have done something a tool did not confirm. When you are finished, call " +
     "submit_result with an honest status, your answer, and any limitations.",
   hr:
-    "You are the HR specialist for Acme d.o.o. Answer policy, leave and equipment " +
+    "You are the HR specialist for TX Service. Answer policy, leave and equipment " +
     "questions using ONLY the tools you have been given, grounded in company " +
-    "policy. Never invent policy. When you are finished, call submit_result with " +
-    "an honest status, your answer, and any limitations."
+    "policy. Never invent policy. If a search returns no exact match but lists " +
+    "the policies that ARE available, tell the user what exists and offer the " +
+    "closest ones rather than saying you found nothing. For leave: use " +
+    "submit_leave_request to file one, get_leave_requests to check status or " +
+    "find pending ones, get_leave_balance to look up an employee's PTO balance " +
+    "(e.g. to confirm they have enough days before approving), and " +
+    "approve_leave_request to approve by id (only if those tools are available " +
+    "to you). Report the request id and status back. When you are finished, " +
+    "call submit_result with an honest status, your answer, and any limitations."
 };
 
-/** System prompt for the agent, with the (scoped) skill index appended. */
+/** System prompt for the agent, with the current date and (scoped) skill index. */
 function buildSystemPrompt(agent: AgentId, skills: readonly Skill[]): string {
+  const base = `${SYSTEM_PROMPTS[agent]}\n\nToday is ${new Date()
+    .toISOString()
+    .slice(
+      0,
+      10
+    )} (UTC); use real calendar dates (YYYY-MM-DD), never placeholders.`;
   const index = skillIndex(agent, skills);
-  if (index.length === 0) return SYSTEM_PROMPTS[agent];
+  if (index.length === 0) return base;
   const lines = index.map((s) => `- ${s.name}: ${s.description}`).join("\n");
   return (
-    `${SYSTEM_PROMPTS[agent]}\n\n` +
+    `${base}\n\n` +
     "Skills available to you (load the relevant one with load_skill BEFORE " +
     `answering, then follow it):\n${lines}`
   );
@@ -173,35 +193,58 @@ export async function runSpecialist(
     }
   };
 
-  // 4. Run the model loop, bounded by a timeout AbortSignal.
-  const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(new Error("specialist_timeout")),
-    timeoutMs
+  // 4. Run the model loop, bounded by a timeout AbortSignal. Retry on a
+  //    transient failure (timeout or thrown error) up to maxAttempts; never
+  //    retry once the model has returned a structured result.
+  const maxAttempts = Math.max(
+    1,
+    params.maxAttempts ?? LIMITS.SPECIALIST_MAX_ATTEMPTS
   );
   let timedOut = false;
   let runError: unknown;
-  try {
-    await llm.complete({
-      modelId,
-      system: buildSystemPrompt(agent, skills),
-      prompt: buildPrompt(task),
-      tools: exposed,
-      maxSteps: LIMITS.SPECIALIST_MAX_STEPS,
-      stopOnToolName: "submit_result",
-      abortSignal: controller.signal
+  let llmResult: LlmResult | undefined;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    timedOut = false;
+    runError = undefined;
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(new Error("specialist_timeout")),
+      timeoutMs
+    );
+    try {
+      llmResult = await llm.complete({
+        modelId,
+        system: buildSystemPrompt(agent, skills),
+        prompt: buildPrompt(task),
+        tools: exposed,
+        maxSteps: LIMITS.SPECIALIST_MAX_STEPS,
+        stopOnToolName: "submit_result",
+        abortSignal: controller.signal
+      });
+    } catch (err) {
+      if (controller.signal.aborted) timedOut = true;
+      else runError = err;
+    } finally {
+      clearTimeout(timer);
+    }
+
+    // Done if the model produced a result, the failure is not transient, or
+    // this was the final attempt. Otherwise trace the retry and try again.
+    const transientFailure = timedOut || runError !== undefined;
+    if (submitted || !transientFailure || attempt === maxAttempts) break;
+    tracer.emit(agent, "specialist_retry", {
+      taskId: task.taskId,
+      attempt,
+      nextAttempt: attempt + 1,
+      reason: timedOut ? "timeout" : "error"
     });
-  } catch (err) {
-    if (controller.signal.aborted) timedOut = true;
-    else runError = err;
-  } finally {
-    clearTimeout(timer);
   }
 
   const result = assembleResult({
     taskId: task.taskId,
     agent,
     submitted,
+    finalText: llmResult?.text,
     toolErrors,
     timedOut,
     runError
@@ -286,11 +329,20 @@ function assembleResult(args: {
   taskId: string;
   agent: AgentId;
   submitted: SubmitResultInput | undefined;
+  finalText: string | undefined;
   toolErrors: string[];
   timedOut: boolean;
   runError: unknown;
 }): SpecialistResult {
-  const { taskId, agent, submitted, toolErrors, timedOut, runError } = args;
+  const {
+    taskId,
+    agent,
+    submitted,
+    finalText,
+    toolErrors,
+    timedOut,
+    runError
+  } = args;
 
   if (submitted) {
     return {
@@ -328,13 +380,21 @@ function assembleResult(args: {
     };
   }
 
-  // Ran to completion but never produced a structured result.
+  // Ran to completion but never called submit_result. If the model produced a
+  // free-text answer, surface it as a partial result rather than dropping it —
+  // a useful answer that merely skipped the structured contract still beats an
+  // empty failure.
+  const text = (finalText ?? "").trim();
   return {
     taskId,
     agent,
     status: "partial",
-    answer: "",
-    limitations: ["specialist did not return a structured result"],
+    answer: text,
+    limitations: [
+      text
+        ? "specialist answered in free text without calling submit_result"
+        : "specialist did not return a structured result"
+    ],
     toolErrors: dedupe(toolErrors)
   };
 }

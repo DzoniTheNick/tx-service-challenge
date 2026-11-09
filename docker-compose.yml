@@ -1,0 +1,26 @@
+# Run the Enterprise AI Assistant locally for manual testing.
+#
+#   1. cp .env.example .env     # then fill in your Cloudflare credentials
+#   2. docker compose up --build
+#   3. open http://localhost:5173
+#
+# The app needs valid Cloudflare credentials because Workers AI inference is
+# proxied to Cloudflare (there is no local model). The token needs the
+# "Edit Cloudflare Workers" permissions (Workers Scripts: Edit + Workers AI).
+
+services:
+  app:
+    build: .
+    # The app UI. The MCP worker on 8788 is internal to the container, so only
+    # 5173 needs publishing for browser testing.
+    ports:
+      - "5173:5173"
+    environment:
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:?set CLOUDFLARE_ACCOUNT_ID in .env}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?set CLOUDFLARE_API_TOKEN in .env}
+      # MCP failure-mode switch for scenario 7: "ok" (default) | "error" | "timeout".
+      # Set MCP_MODE=error (or timeout) in .env, then `docker compose up --build`.
+      MCP_MODE: ${MCP_MODE:-ok}
+    # First-run package install + remote AI session setup can take a bit;
+    # give the container time before Compose considers it unhealthy.
+    stop_grace_period: 10s

@@ -4,7 +4,8 @@ import { DEFAULT_MODEL, LIMITS, modelFor } from "../src/config";
 describe("config (Phase 0 smoke)", () => {
   it("exposes the documented limits", () => {
     expect(LIMITS.SPECIALIST_MAX_STEPS).toBe(5);
-    expect(LIMITS.SPECIALIST_TIMEOUT_MS).toBe(25_000);
+    expect(LIMITS.SPECIALIST_MAX_ATTEMPTS).toBe(2);
+    expect(LIMITS.SPECIALIST_TIMEOUT_MS).toBe(60_000);
     expect(LIMITS.ORCHESTRATOR_MAX_STEPS).toBe(6);
     expect(LIMITS.MCP_TIMEOUT_MS).toBe(5_000);
     expect(LIMITS.MAX_TASKS).toBe(4);

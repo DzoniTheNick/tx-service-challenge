@@ -1,0 +1,17 @@
+# Keep the build context small and never bake host-only or secret files into
+# the image. node_modules is excluded so the correct-platform binaries
+# (workerd/esbuild) are installed *inside* the image, not copied from the host.
+node_modules
+**/node_modules
+.wrangler
+dist
+.git
+.yarn/cache
+.yarn/install-state.gz
+*.log
+
+# Secrets / host-only env (passed in at runtime via compose, never built in)
+.env
+.env.*
+.autoenv.zsh
+.dev.vars

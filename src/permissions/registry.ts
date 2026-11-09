@@ -27,23 +27,28 @@ export interface ToolDescriptor {
   readonly description: string;
 }
 
-const ALL_ROLES: readonly Role[] = ["employee", "it_admin"];
+const ALL_ROLES: readonly Role[] = ["employee", "it_admin", "hr_admin"];
 
 /**
  * The capability matrix as data. Exactly mirrors the table in CONTEXT.md §4:
  *
- *   capability            kind    employee it_admin  IT   HR
- *   get_service_status    native     ✓        ✓       ✓    ✗
- *   reset_password        native     ✗        ✓       ✓    ✗
- *   load_skill            native     ✓        ✓       ✓    ✓
- *   search_policies       mcp        ✓        ✓       ✗    ✓
- *   read_policy           mcp        ✓        ✓       ✗    ✓
- *   get_equipment_profile mcp        ✓        ✓       ✗    ✓
- *   search_it_kb          mcp        ✓        ✓       ✓    ✗
+ *   capability            kind    employee it_admin hr_admin  IT   HR
+ *   get_service_status    native     ✓        ✓        ✓       ✓    ✗
+ *   reset_password        native     ✗        ✓        ✗       ✓    ✗
+ *   load_skill            native     ✓        ✓        ✓       ✓    ✓
+ *   search_policies       mcp        ✓        ✓        ✓       ✗    ✓
+ *   read_policy           mcp        ✓        ✓        ✓       ✗    ✓
+ *   get_equipment_profile mcp        ✓        ✓        ✓       ✗    ✓
+ *   search_it_kb          mcp        ✓        ✓        ✓       ✓    ✗
+ *   submit_leave_request  native     ✓        ✓        ✓       ✗    ✓
+ *   get_leave_requests    native     ✓        ✓        ✓       ✗    ✓
+ *   get_leave_balance     native     ✓        ✓        ✓       ✗    ✓
+ *   approve_leave_request native     ✗        ✗        ✓       ✗    ✓
  *
- * Two kinds of difference are deliberately encoded: a user-level one
- * (`reset_password`, it_admin only) and agent-level ones (policy/equipment
- * tools HR-only vs `get_service_status`/`search_it_kb` IT-only).
+ * User-level role gates are deliberately encoded for each admin role:
+ * `reset_password` (it_admin only) and `approve_leave_request` (hr_admin only);
+ * the rest differ by agent scope (policy/equipment/leave tools HR-only vs
+ * `get_service_status`/`search_it_kb` IT-only).
  */
 export const TOOL_REGISTRY: readonly ToolDescriptor[] = [
   {
@@ -95,6 +100,36 @@ export const TOOL_REGISTRY: readonly ToolDescriptor[] = [
     roles: ALL_ROLES,
     agents: ["it"],
     description: "Search the IT knowledge base for troubleshooting articles."
+  },
+  {
+    name: "submit_leave_request",
+    kind: "native",
+    roles: ALL_ROLES,
+    agents: ["hr"],
+    description: "Submit a leave request for the current employee."
+  },
+  {
+    name: "get_leave_requests",
+    kind: "native",
+    roles: ALL_ROLES,
+    agents: ["hr"],
+    description:
+      "List leave requests (an employee sees their own; an HR admin sees all)."
+  },
+  {
+    name: "get_leave_balance",
+    kind: "native",
+    roles: ALL_ROLES,
+    agents: ["hr"],
+    description:
+      "Look up an employee's PTO balance (own for an employee; any for an HR admin)."
+  },
+  {
+    name: "approve_leave_request",
+    kind: "native",
+    roles: ["hr_admin"],
+    agents: ["hr"],
+    description: "Approve a pending leave request (HR admin only)."
   }
 ] as const;
 

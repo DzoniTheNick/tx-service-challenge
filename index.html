@@ -5,13 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="AI chat agent built with Cloudflare Agents"
+      content="TX Service Help Desk — internal IT & HR assistant, multi-agent and permission-aware."
     />
-    <title>Agent Starter</title>
-    <link rel="icon" href="/favicon.ico" />
+    <title>TX Service - Help Desk</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link
+      rel="alternate icon"
+      type="image/png"
+      sizes="32x32"
+      href="/favicon-32.png"
+    />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
     <script>
+      // TX-Group-inspired dark theme is the default; a light mode is still
+      // available via the in-app toggle (persisted in localStorage).
       (() => {
-        const mode = localStorage.getItem("theme") || "light";
+        const mode = localStorage.getItem("theme") || "dark";
         document.documentElement.setAttribute("data-mode", mode);
         document.documentElement.style.colorScheme = mode;
       })();

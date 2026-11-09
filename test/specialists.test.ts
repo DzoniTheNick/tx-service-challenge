@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { USERS } from "../src/identity";
-import { createFakeLlmClient } from "../src/llm";
+import { createFakeLlmClient, type LlmClient } from "../src/llm";
 import { runSpecialist, type SpecialistTask } from "../src/agents/specialists";
 import { createTracer, type TraceEvent } from "../src/trace";
 import type { AgentId } from "../src/permissions/registry";
@@ -198,6 +198,87 @@ describe("runSpecialist — timeout", () => {
   });
 });
 
+describe("runSpecialist — retries (allow retries)", () => {
+  const ok = {
+    status: "ok",
+    answer: "recovered",
+    limitations: [],
+    toolErrors: []
+  };
+
+  it("retries a transient error and succeeds on the next attempt", async () => {
+    let calls = 0;
+    const llm: LlmClient = {
+      async complete(params) {
+        calls++;
+        if (calls === 1) throw new Error("transient boom");
+        await params.tools.submit_result.execute(ok);
+        return { text: "", toolCalls: [], finishReason: "stop" };
+      }
+    };
+    const rows: TraceEvent[] = [];
+    const result = await runSpecialist({
+      agent: "it",
+      user: bob,
+      task: task(),
+      llm,
+      modelId: "fake",
+      tracer: tracerInto(rows)
+    });
+    expect(calls).toBe(2);
+    expect(result.status).toBe("ok");
+    expect(result.answer).toBe("recovered");
+    expect(rows.some((r) => r.event === "specialist_retry")).toBe(true);
+  });
+
+  it("does NOT retry a model-returned failure (a decision, not transient)", async () => {
+    let calls = 0;
+    const llm: LlmClient = {
+      async complete(params) {
+        calls++;
+        await params.tools.submit_result.execute({
+          status: "failed",
+          answer: "",
+          limitations: ["no can do"],
+          toolErrors: []
+        });
+        return { text: "", toolCalls: [], finishReason: "stop" };
+      }
+    };
+    const result = await runSpecialist({
+      agent: "it",
+      user: bob,
+      task: task(),
+      llm,
+      modelId: "fake",
+      tracer: createTracer("t", () => {})
+    });
+    expect(calls).toBe(1);
+    expect(result.status).toBe("failed");
+  });
+
+  it("honors maxAttempts=1 (retries off)", async () => {
+    let calls = 0;
+    const llm: LlmClient = {
+      async complete() {
+        calls++;
+        throw new Error("boom");
+      }
+    };
+    const result = await runSpecialist({
+      agent: "it",
+      user: bob,
+      task: task(),
+      llm,
+      modelId: "fake",
+      maxAttempts: 1,
+      tracer: createTracer("t", () => {})
+    });
+    expect(calls).toBe(1);
+    expect(result.status).toBe("failed");
+  });
+});
+
 describe("runSpecialist — no structured result", () => {
   it("wraps a plain-text finish as partial", async () => {
     const llm = createFakeLlmClient({ finalText: "here is some prose" });
@@ -210,8 +291,10 @@ describe("runSpecialist — no structured result", () => {
       tracer: createTracer("t", () => {})
     });
     expect(result.status).toBe("partial");
+    // The free-text answer is surfaced rather than dropped.
+    expect(result.answer).toBe("here is some prose");
     expect(result.limitations).toContain(
-      "specialist did not return a structured result"
+      "specialist answered in free text without calling submit_result"
     );
   });
 });

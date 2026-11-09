@@ -16,6 +16,7 @@ import { resolveUser, userOwnsInstance, type User } from "./identity";
 import type { ChatAgent } from "./agents/orchestrator";
 
 export { ChatAgent } from "./agents/orchestrator";
+export { LeaveStore } from "./leave/store";
 
 type AppEnv = { Bindings: Env; Variables: { user: User } };
 const app = new Hono<AppEnv>();

@@ -9,8 +9,8 @@
  * which is what the ownership check below enforces.
  */
 
-/** The two roles the capability matrix distinguishes (CONTEXT.md §4). */
-export type Role = "employee" | "it_admin";
+/** The roles the capability matrix distinguishes (CONTEXT.md §4). */
+export type Role = "employee" | "it_admin" | "hr_admin";
 
 export interface User {
   readonly id: string;
@@ -21,12 +21,14 @@ export interface User {
 
 /**
  * Fixed test users (CONTEXT.md §4 "Roles"). `alice` is a regular employee,
- * `bob` an IT administrator. This list is the single source of truth for
- * identity; there is no sign-up or external directory in the MVP.
+ * `bob` an IT administrator, `charlie` an HR administrator. This list is the
+ * single source of truth for identity; there is no sign-up or external
+ * directory in the MVP.
  */
 export const USERS: Readonly<Record<string, User>> = {
   alice: { id: "alice", role: "employee", label: "Alice (employee)" },
-  bob: { id: "bob", role: "it_admin", label: "Bob (IT admin)" }
+  bob: { id: "bob", role: "it_admin", label: "Bob (IT admin)" },
+  charlie: { id: "charlie", role: "hr_admin", label: "Charlie (HR admin)" }
 } as const;
 
 /** Every known user, in a stable order (for the UI dropdown). */

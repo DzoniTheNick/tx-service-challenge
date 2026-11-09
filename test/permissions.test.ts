@@ -10,6 +10,7 @@ import {
 
 const alice = USERS.alice; // employee
 const bob = USERS.bob; // it_admin
+const charlie = USERS.charlie; // hr_admin
 
 /** Convenience: names the (user, agent) pair is allowed to use. */
 function allowedNames(user: typeof alice, agent: AgentId): string[] {
@@ -97,18 +98,42 @@ describe("allowedTools — full partition matches the CONTEXT §4 matrix", () =>
   it("employee on HR", () => {
     expect(allowedNames(alice, "hr")).toEqual([
       "get_equipment_profile",
+      "get_leave_balance",
+      "get_leave_requests",
       "load_skill",
       "read_policy",
-      "search_policies"
+      "search_policies",
+      "submit_leave_request"
     ]);
   });
 
-  it("it_admin on HR (role grants nothing HR-specific beyond employee)", () => {
+  it("it_admin on HR (its admin grant is IT-only, nothing HR-specific)", () => {
     expect(allowedNames(bob, "hr")).toEqual(allowedNames(alice, "hr"));
   });
 
+  it("hr_admin on HR adds exactly approve_leave_request over an employee", () => {
+    const empl = new Set(allowedNames(alice, "hr"));
+    const admin = new Set(allowedNames(charlie, "hr"));
+    const extra = [...admin].filter((n) => !empl.has(n));
+    expect(extra).toEqual(["approve_leave_request"]);
+  });
+
+  it("approve_leave_request is HR-admin-only (denied to employee and it_admin)", () => {
+    expect(denyReason(alice, "hr", "approve_leave_request")).toBe("user_role");
+    expect(denyReason(bob, "hr", "approve_leave_request")).toBe("user_role");
+    expect(allowedNames(charlie, "hr")).toContain("approve_leave_request");
+  });
+
+  it("hr_admin gets no IT-privileged tool (reset_password stays it_admin)", () => {
+    expect(denyReason(charlie, "it", "reset_password")).toBe("user_role");
+    // and the leave tools are HR-scoped, not IT
+    expect(denyReason(charlie, "it", "submit_leave_request")).toBe(
+      "agent_scope"
+    );
+  });
+
   it("allowed + denied always partitions the whole catalog with no overlap", () => {
-    for (const user of [alice, bob]) {
+    for (const user of [alice, bob, charlie]) {
       for (const agent of ["it", "hr"] as const) {
         const { allowed, denied } = allowedTools(user, agent);
         expect(allowed.length + denied.length).toBe(TOOL_REGISTRY.length);

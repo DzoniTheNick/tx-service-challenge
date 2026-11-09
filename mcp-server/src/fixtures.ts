@@ -125,7 +125,7 @@ export const IT_KB: readonly KbArticle[] = [
     title: "Office Wi-Fi is slow or dropping",
     tags: ["wifi", "network", "slow", "office"],
     body:
-      "Forget and rejoin the 'Acme-Corp' network, move closer to an access point, " +
+      "Forget and rejoin the 'TX-Service' network, move closer to an access point, " +
       "and avoid the guest network for work traffic. Persistent issues: report the " +
       "floor and access-point name to IT."
   },

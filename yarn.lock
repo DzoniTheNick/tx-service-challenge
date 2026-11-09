@@ -527,9 +527,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@cloudflare/ai-chat@npm:^0.9.3":
-  version: 0.9.4
-  resolution: "@cloudflare/ai-chat@npm:0.9.4"
+"@cloudflare/ai-chat@npm:0.9.3":
+  version: 0.9.3
+  resolution: "@cloudflare/ai-chat@npm:0.9.3"
   dependencies:
     nanoid: "npm:^5.1.16"
   peerDependencies:
@@ -538,7 +538,7 @@ __metadata:
     ai: ^6.0.0
     react: ^19.0.0
     zod: ^4.0.0
-  checksum: 10c0/da1a39b5f43f7943f4fb1d4f36a044fbb7e5ef3d8ed7c7c55971e1ce4121dcbbe86e68f5c3cb8cdfb85c82affa5d896321f0f2f9bdcfcfd94d723a4dc494ba74
+  checksum: 10c0/98ea935b63baa0dc0deaf987f510425712b7b3f94d71426943b7a5e9a8cf6bed79fc2dd147d1d7c361c514d76c4c3f29b6b1d66004d47a0fd242f6eaaea6e160
   languageName: node
   linkType: hard
 
@@ -3654,7 +3654,7 @@ __metadata:
   dependencies:
     "@ai-sdk/react": "npm:^3.0.204"
     "@babel/plugin-proposal-decorators": "npm:^8.0.2"
-    "@cloudflare/ai-chat": "npm:^0.9.3"
+    "@cloudflare/ai-chat": "npm:0.9.3"
     "@cloudflare/kumo": "npm:^2.6.0"
     "@cloudflare/vite-plugin": "npm:^1.46.0"
     "@cloudflare/vitest-pool-workers": "npm:^0.8.71"

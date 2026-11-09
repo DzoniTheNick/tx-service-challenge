@@ -24,6 +24,7 @@ export type TraceEventName =
   | "delegation_planned"
   | "clarification_requested"
   | "specialist_start"
+  | "specialist_retry"
   | "permission_check"
   | "skill_loaded"
   | "tool_call"

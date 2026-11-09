@@ -14,7 +14,7 @@
  */
 
 import type { User } from "../identity";
-import type { LlmClient, SpecialistToolMap } from "../llm";
+import type { LlmClient, SpecialistTool, SpecialistToolMap } from "../llm";
 import type { Tracer } from "../trace";
 import { runSpecialist, type SpecialistTask } from "../agents/specialists";
 import type { SpecialistResult } from "../agents/contract";
@@ -30,6 +30,8 @@ export interface RunTaskArgs {
   readonly tracer: Tracer;
   readonly mcpTools?: SpecialistToolMap;
   readonly skills?: readonly Skill[];
+  /** Native tool implementations for this turn (user/env-aware, e.g. leave). */
+  readonly nativeTools?: Readonly<Record<string, SpecialistTool>>;
 }
 
 /** The unit of work the executor delegates; defaults to {@link runSpecialist}. */
@@ -47,6 +49,8 @@ export interface ExecutorParams {
   readonly mcpTools?: SpecialistToolMap;
   /** Skills resolved for this turn, forwarded to every specialist. */
   readonly skills?: readonly Skill[];
+  /** Native tool implementations for this turn, forwarded to every specialist. */
+  readonly nativeTools?: Readonly<Record<string, SpecialistTool>>;
 }
 
 export interface ExecutorResult {
@@ -71,7 +75,8 @@ const defaultRunTask: RunTask = (a) =>
     modelId: a.modelId,
     tracer: a.tracer,
     mcpTools: a.mcpTools,
-    skills: a.skills
+    skills: a.skills,
+    nativeTools: a.nativeTools
   });
 
 export async function runExecutor(
@@ -143,7 +148,8 @@ export async function runExecutor(
             modelId: params.modelId,
             tracer: params.tracer,
             mcpTools: params.mcpTools,
-            skills: params.skills
+            skills: params.skills,
+            nativeTools: params.nativeTools
           });
           results.set(id, result);
         } catch (err) {

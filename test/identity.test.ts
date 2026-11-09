@@ -21,7 +21,7 @@ describe("identity — resolveUser", () => {
   });
 
   it("exposes a stable user list for the UI switcher", () => {
-    expect(USER_LIST.map((u) => u.id)).toEqual(["alice", "bob"]);
+    expect(USER_LIST.map((u) => u.id)).toEqual(["alice", "bob", "charlie"]);
     expect(USER_LIST).toHaveLength(Object.keys(USERS).length);
   });
 });

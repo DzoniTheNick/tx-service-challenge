@@ -25,6 +25,11 @@
       {
         "class_name": "ChatAgent",
         "name": "ChatAgent"
+      },
+      {
+        // Single shared store for cross-user leave requests (scenario 9).
+        "class_name": "LeaveStore",
+        "name": "LEAVE_STORE"
       }
     ]
   },
@@ -32,6 +37,10 @@
     {
       "new_sqlite_classes": ["ChatAgent"],
       "tag": "v1"
+    },
+    {
+      "new_sqlite_classes": ["LeaveStore"],
+      "tag": "v2"
     }
   ]
 }

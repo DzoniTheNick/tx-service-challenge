@@ -76,6 +76,15 @@ export class AcmeMcp extends McpAgent<Env> {
           title: p.title,
           snippet: p.body.slice(0, 160)
         }));
+        // On a miss, hand back the catalog of available policies so the caller
+        // can offer what DOES exist instead of dead-ending on an exact-match gap.
+        if (results.length === 0) {
+          return {
+            ok: true,
+            results,
+            available: POLICIES.map((p) => ({ id: p.id, title: p.title }))
+          };
+        }
         return { ok: true, results };
       })
     );

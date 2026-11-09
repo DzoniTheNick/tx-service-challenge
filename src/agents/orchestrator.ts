@@ -24,7 +24,7 @@ import {
   type ToolSet
 } from "ai";
 import { LIMITS, modelFor } from "../config";
-import { resolveUser, type User } from "../identity";
+import { resolveUser, type Role, type User } from "../identity";
 import { TOOL_REGISTRY } from "../permissions/registry";
 import { createWorkersAiLlmClient, type SpecialistToolMap } from "../llm";
 import { createTracer, type TraceEvent, type Tracer } from "../trace";
@@ -37,6 +37,9 @@ import {
 } from "../mcp/client";
 import { loadSkills, type Skill } from "../skills/loader";
 import { BUNDLED_SKILLS } from "../skills/bundled";
+import { NATIVE_TOOLS } from "../tools/native";
+import { buildLeaveTools } from "../tools/leave";
+import { leaveStore } from "../leave/store";
 
 interface TraceRow {
   id: string;
@@ -91,6 +94,13 @@ export class ChatAgent extends AIChatAgent<Env> {
     const mcpTools = await this.discoverMcp(tracer);
     // Resolve skills once per turn (KV source of truth, bundled fallback).
     const skills = await this.loadTurnSkills();
+    // Native tools for this turn: the static mocks plus the leave-request tools
+    // bound to the acting user and the shared store (scenario 9). Exposure is
+    // still gated per (user, agent) by allowedTools inside the specialist.
+    const nativeTools = {
+      ...NATIVE_TOOLS,
+      ...buildLeaveTools(user, leaveStore(this.env))
+    };
     let delegated = false;
 
     const result = streamText({
@@ -131,7 +141,8 @@ export class ChatAgent extends AIChatAgent<Env> {
               modelId: specialistModel,
               tracer,
               mcpTools,
-              skills
+              skills,
+              nativeTools
             });
             return {
               ok: true,
@@ -248,30 +259,126 @@ export class ChatAgent extends AIChatAgent<Env> {
   }
 }
 
-/** System prompt listing the user's capability boundaries and delegation rules. */
+/** Friendly, user-facing names for the internal role ids. */
+const ROLE_LABELS: Record<Role, string> = {
+  employee: "Employee",
+  it_admin: "IT Administrator",
+  hr_admin: "HR Administrator"
+};
+
+/**
+ * Plain-language, user-facing description of each capability. Keyed by registry
+ * tool name; `load_skill` is internal and intentionally omitted. `get_leave_requests`
+ * reads differently for an admin (sees everyone) vs an employee (sees their own).
+ */
+function capabilityPhrase(toolName: string, role: Role): string | null {
+  switch (toolName) {
+    case "get_service_status":
+      return "check the status of internal IT services";
+    case "search_it_kb":
+      return "search the IT knowledge base for troubleshooting help";
+    case "search_policies":
+    case "read_policy":
+      return "look up company policies";
+    case "get_equipment_profile":
+      return "look up the standard equipment profile for a role";
+    case "submit_leave_request":
+      return "submit a leave request";
+    case "get_leave_requests":
+      return role === "hr_admin"
+        ? "view all employees' leave requests and their status"
+        : "check the status of your own leave requests";
+    case "get_leave_balance":
+      return role === "hr_admin"
+        ? "look up any employee's PTO (leave) balance"
+        : "check your own PTO (leave) balance";
+    case "reset_password":
+      return "reset another user's password";
+    case "approve_leave_request":
+      return "approve pending leave requests";
+    default:
+      return null; // internal (e.g. load_skill) — not user-facing
+  }
+}
+
+/** System prompt listing the user's capabilities (authoritative) and delegation rules. */
 function orchestratorSystemPrompt(user: User): string {
-  const roleDenied = TOOL_REGISTRY.filter(
-    (t) => !t.roles.includes(user.role)
-  ).map((t) => t.name);
-  const deniedLine =
-    roleDenied.length > 0
-      ? `This user's role (${user.role}) is NOT permitted to use: ${roleDenied.join(", ")}. ` +
-        "If the request needs one of these, explain honestly that it is not available to this user rather than attempting it."
-      : `This user's role (${user.role}) has no role-level capability restrictions.`;
+  const roleLabel = ROLE_LABELS[user.role];
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const weekday = now.toLocaleDateString("en-US", {
+    weekday: "long",
+    timeZone: "UTC"
+  });
+
+  // The COMPLETE, authoritative list of what this role can do, in plain language
+  // (deduped — several tools collapse to one user-facing capability).
+  const can = new Set<string>();
+  // The subset unique to this role (not available to a regular employee).
+  const extra = new Set<string>();
+  for (const t of TOOL_REGISTRY) {
+    if (!t.roles.includes(user.role)) continue;
+    const p = capabilityPhrase(t.name, user.role);
+    if (!p) continue;
+    can.add(p);
+    if (!t.roles.includes("employee")) extra.add(p);
+  }
+  const canList = [...can].map((p) => `- ${p}`).join("\n");
+  const extraLine =
+    extra.size > 0
+      ? `Of these, the ONLY abilities a regular Employee does not also have are: ${[...extra].join("; ")}. Do not claim any other difference from an employee.`
+      : "This role has the standard shared capabilities and no extra privileged abilities.";
 
   return [
-    "You are the orchestrator for Acme d.o.o.'s internal IT + HR assistant.",
+    "You are the orchestrator for the TX Service internal IT + HR help desk.",
     "You coordinate two specialists via the `delegate` tool: an IT specialist " +
       "(service status, password resets, IT knowledge base) and an HR specialist " +
-      "(company policies, leave, equipment profiles). You never do their work " +
+      "(company policies, equipment profiles, and leave requests — submitting, " +
+      "listing, and approving them). You never do their work " +
       "yourself and you never invent facts.",
     "Decide what each specialist should do, then call `delegate` with " +
-      "self-contained task instructions. Chain tasks with dependsOn only when one " +
-      "genuinely needs another's output. If the request is ambiguous, ask ONE " +
-      "concise clarifying question instead of delegating.",
-    deniedLine,
+      "self-contained task instructions. Keep each instruction SHORT and specific " +
+      "(one or two sentences naming exactly what the specialist should look up or " +
+      "do) — do not enumerate every possible topic or restate policy; the " +
+      "specialist has its own tools and will decide how to answer. Chain tasks " +
+      "with dependsOn only when one genuinely needs another's output. If the " +
+      "request is ambiguous, ask ONE concise clarifying question instead of " +
+      "delegating. Do NOT narrate what you are about to do (no 'I'll ask the HR " +
+      "specialist…', no preamble) — call delegate directly and write " +
+      "user-facing text only as your single final answer once results return.",
+    `The user is signed in as ${roleLabel}. Always refer to their role by this ` +
+      "friendly name, never the internal id (not 'it_admin'/'hr_admin').",
+    `This is the COMPLETE and EXACT list of what you can help this ${roleLabel} ` +
+      `with — treat it as the whole truth and never claim, imply, or invent any ` +
+      `ability beyond it (there is NO 'reset your own password', no self-service ` +
+      `portal, no benefits/payroll actions, etc.):\n${canList}`,
+    extraLine,
+    "When the user asks what you can help with or what their role can do, answer " +
+      "DIRECTLY (do not delegate) using ONLY the list above, in plain language. " +
+      "Do NOT volunteer a list of things they cannot do, and do NOT mention " +
+      "abilities that belong to other roles. If the user asks for an action that " +
+      "is not on the list, tell them plainly it is not available to their role " +
+      "and never invent a reason for it.",
+    "In every user-facing answer, speak as a single assistant in the first " +
+      "person ('I can help you …'). Never mention the internal IT/HR specialists, " +
+      "the delegate mechanism, or raw tool names — describe capabilities in plain " +
+      "language.",
+    `Today is ${weekday}, ${today} (UTC). Resolve relative dates yourself — ` +
+      "'this Friday', 'next Monday', 'in 10 days' — into concrete YYYY-MM-DD " +
+      "dates; NEVER ask the user to compute a calendar date for you. A leave " +
+      "request needs a start date, an end date, and a reason; if the user gives " +
+      "a start plus a duration (e.g. '10 days from Friday'), compute the end " +
+      "date yourself (an N-day leave ending on start+N-1).",
+    "To actually DO something — submit or approve a leave request, reset a " +
+      "password — you MUST delegate it so the specialist calls the real tool; a " +
+      "text reply performs NOTHING. Once you have the needed details, delegate " +
+      "the action immediately. NEVER say you 'will' submit/approve something " +
+      "'now' or 'shortly', and never state that an action was done unless a " +
+      "specialist tool actually returned a result confirming it (e.g. a leave " +
+      "request id). If details are missing, ask only for exactly what is missing.",
     "When specialists return results, compose a single honest answer. If a task " +
       "failed or returned limitations, say so plainly — never claim success that " +
-      "the results do not support."
+      "the results do not support. When a leave request is submitted, report the " +
+      "returned request id and its status so the user can track it."
   ].join("\n\n");
 }
