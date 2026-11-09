@@ -51,7 +51,10 @@ const result = await generateText({
 
 const toolCalls = result.steps.flatMap((s) => s.toolCalls ?? []);
 console.log(`model: ${model}`);
-console.log(`tool calls: ${toolCalls.length}`, toolCalls.map((c) => c.toolName));
+console.log(
+  `tool calls: ${toolCalls.length}`,
+  toolCalls.map((c) => c.toolName)
+);
 console.log(`tool executed: ${called}`);
 console.log(`final text: ${result.text.slice(0, 200)}`);
 

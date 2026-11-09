@@ -142,3 +142,6 @@ dist
 .wrangler
 .dev.vars
 
+# Local shell env (may hold secrets, e.g. CLOUDFLARE_API_TOKEN)
+.autoenv.zsh
+
