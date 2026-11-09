@@ -8,7 +8,7 @@ workflow. Guiding principle: **the LLM decides, code enforces** (permissions, or
 concurrency, limits, failure handling, trace).
 
 The full challenge spec is in `CONTEXT.md`; a production-design sketch (out of MVP scope) in
-`PRODUCTION.md`; a per-phase build log in `SESSION_HANDOFF.md`.
+`PRODUCTION.md`.
 
 ---
 
